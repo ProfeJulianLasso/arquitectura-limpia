@@ -1,5 +1,4 @@
 import {
-  AggregateRoot,
   ContactDomainRequest,
   ContactDomainResponse,
   IAggregateRoot,
@@ -9,7 +8,7 @@ import { IUseCase } from '../Interfaces';
 import { ContactRepositoryBase } from '../repositories';
 import { ContactApplicationRequest, ContactApplicationResponse } from './Dto';
 
-export class CrateContactUseCase
+export class UpdateContactUseCase
   implements
     IUseCase<
       ContactApplicationRequest,
@@ -19,7 +18,10 @@ export class CrateContactUseCase
   private aggregateRoot: IAggregateRoot;
   private repository: ContactRepositoryBase;
 
-  constructor(aggregateRoot: AggregateRoot, repository: ContactRepositoryBase) {
+  constructor(
+    aggregateRoot: IAggregateRoot,
+    repository: ContactRepositoryBase,
+  ) {
     this.aggregateRoot = aggregateRoot;
     this.repository = repository;
   }
@@ -28,15 +30,15 @@ export class CrateContactUseCase
     request: ContactApplicationRequest,
   ): Result<ContactApplicationResponse | ErrorResponse> {
     const data = this.mapToDomain(request);
-    const resultDomain = this.aggregateRoot.createContact(data);
+    const resultDomain = this.aggregateRoot.updateContact(data);
 
-    if (resultDomain.isFailure && resultDomain.error instanceof ErrorResponse) {
-      return Result.fail(resultDomain.error);
+    if (resultDomain.isFailure) {
+      return resultDomain;
     }
 
     if (
       resultDomain.isSuccess &&
-      resultDomain.value instanceof ContactDomainResponse
+      resultDomain.value instanceof ContactDomainRequest
     ) {
       const result = this.persist(resultDomain.value);
       if (result.isFailure) {
@@ -44,13 +46,8 @@ export class CrateContactUseCase
       }
 
       if (result.isSuccess) {
-        return Result.ok(
-          new ContactApplicationResponse({
-            id: resultDomain.value.id,
-            name: resultDomain.value.name,
-            email: resultDomain.value.email,
-          }),
-        );
+        const finalResult = this.mapToInfrastructure(resultDomain.value);
+        return Result.ok(finalResult);
       }
     }
   }
@@ -67,15 +64,25 @@ export class CrateContactUseCase
 
   private persist(data: ContactDomainRequest): Result<ErrorResponse> {
     try {
-      this.repository.create(data);
+      this.repository.update(data);
       return Result.ok();
     } catch (error) {
       return Result.fail(
         new ErrorResponse({
-          message: 'Error on create contact',
+          message: 'Error on update contact',
           details: JSON.stringify(error),
         }),
       );
     }
+  }
+
+  private mapToInfrastructure(
+    data: ContactDomainResponse,
+  ): ContactApplicationResponse {
+    return new ContactApplicationResponse({
+      id: data.id,
+      name: data.name,
+      email: data.email,
+    });
   }
 }
